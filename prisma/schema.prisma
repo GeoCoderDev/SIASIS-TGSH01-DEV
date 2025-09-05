@@ -79,7 +79,7 @@ model T_Profesores_Primaria {
   Id_Profesor_Primaria String                                          @id @db.VarChar(20)
   Nombres              String                                          @db.VarChar(60)
   Apellidos            String                                          @db.VarChar(60)
-  Genero               String                                          @db.VarChar(1) // Reemplazado ENUM por VARCHAR(1)
+  Genero               String                                          @db.VarChar(1)
   Nombre_Usuario       String                                          @unique @db.VarChar(40)
   Estado               Boolean
   Correo_Electronico   String?                                         @db.VarChar(70)
