@@ -1,60 +1,150 @@
-# name: Ejecutar Script de Datos para toma de Asistencia Diaria
+name: Actualizar Lista de Asistencias de Hoy
 
-# on:
-#   schedule:
-#     # Ejecutar a las 4:00 AM hora de Perú (UTC-5) de lunes a viernes /Se retrocedio una hora, debido a posibles retrasos que podrian suceder en la ejecución
-#     # En GitHub Actions se usa UTC, por lo que 4:00 AM en Perú es 09:00 AM UTC
-#     # Solo en meses de marzo (3) a diciembre (12)
-#     - cron: "0 9 * 3-12 1-5"
+on:
+  # Ejecución manual desde GitHub
+  workflow_dispatch:
+    inputs:
+      nivel:
+        description: "Nivel educativo"
+        required: true
+        type: choice
+        options:
+          - "P"
+          - "S"
+        default: "P"
+      grado:
+        description: "Grado"
+        required: true
+        type: choice
+        options:
+          - "1"
+          - "2"
+          - "3"
+          - "4"
+          - "5"
+          - "6"
+        default: "1"
 
-#   # Añadido: Trigger para ejecutar en push a master
-#   # push:
-#   #   branches:
-#   #     - master
+  # Ejecución desde solicitud HTTP externa
+  repository_dispatch:
+    types: [actualizar-listas-asistencia-hoy]
 
-#   # Permite la ejecución manual para pruebas
-#   workflow_dispatch:
+jobs:
+  actualizar-lista-asistencias:
+    runs-on: ubuntu-latest
 
-# jobs:
-#   ejecutar-script-asistencia:
-#     runs-on: ubuntu-latest
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
 
-#     steps:
-#       - name: Checkout del repositorio
-#         uses: actions/checkout@v4
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
 
-#       - name: Configurar Node.js
-#         uses: actions/setup-node@v4
-#         with:
-#           node-version: "18"
-#           cache: "npm"
+      - name: Instalar dependencias
+        run: npm install
 
-#       - name: Instalar dependencias
-#         run: npm install
+      - name: Validar parámetros de entrada
+        id: validar-parametros
+        run: |
+          # Determinar origen de los parámetros
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "Ejecutión manual detectada"
+            NIVEL="${{ github.event.inputs.nivel }}"
+            GRADO="${{ github.event.inputs.grado }}"
+          elif [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            echo "Ejecución por HTTP detectada"
+            NIVEL="${{ github.event.client_payload.nivel }}"
+            GRADO="${{ github.event.client_payload.grado }}"
+          else
+            echo "❌ Tipo de evento no soportado: ${{ github.event_name }}"
+            exit 1
+          fi
 
-#       - name: Ejecutar script con ts-node
-#         run: |
-#           echo "Ejecutando script..."
-#           npx ts-node ./src/jobs/asistenciaDePersonal/SetDatosAsistenciaDiaria.ts
-#         env:
-#           RDP01_GOOGLE_SERVICE_ACCOUNT_EMAIL: ${{ secrets.RDP01_GOOGLE_SERVICE_ACCOUNT_EMAIL }}
-#           RDP01_GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: ${{ secrets.RDP01_GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY }}
-#           RDP01_GOOGLE_SERVICE_ACCOUNT_PROJECT_ID: ${{ secrets.RDP01_GOOGLE_SERVICE_ACCOUNT_PROJECT_ID }}
-#           RDP01_GOOGLE_DRIVE_ROOT_SHARED_FOLDER_ID: ${{ secrets.RDP01_GOOGLE_DRIVE_ROOT_SHARED_FOLDER_ID }}
-#           RDP02_INS1_DATABASE_URL: ${{ secrets.RDP02_INS1_DATABASE_URL }}
-#           RDP02_INS2_DATABASE_URL: ${{ secrets.RDP02_INS2_DATABASE_URL }}
-#           RDP02_INS3_DATABASE_URL: ${{ secrets.RDP02_INS3_DATABASE_URL }}
-#           RDP04_VERCEL_BLOB_INS1_READ_WRITE_TOKEN: ${{ secrets.RDP04_VERCEL_BLOB_INS1_READ_WRITE_TOKEN }}
-#           RDP04_VERCEL_BLOB_INS2_READ_WRITE_TOKEN: ${{ secrets.RDP04_VERCEL_BLOB_INS2_READ_WRITE_TOKEN }}
-#           RDP04_VERCEL_BLOB_INS3_READ_WRITE_TOKEN: ${{ secrets.RDP04_VERCEL_BLOB_INS3_READ_WRITE_TOKEN }}
-#           RDP04_VERCEL_BLOB_INS4_READ_WRITE_TOKEN: ${{ secrets.RDP04_VERCEL_BLOB_INS4_READ_WRITE_TOKEN }}
-#           RDP04_VERCEL_BLOB_INS5_READ_WRITE_TOKEN: ${{ secrets.RDP04_VERCEL_BLOB_INS5_READ_WRITE_TOKEN }}
-#           RDP05_INS1_REDIS_BD_BASE_URL_API: ${{ secrets.RDP05_INS1_REDIS_BD_BASE_URL_API }}
-#           RDP05_INS1_REDIS_BD_TOKEN_FOR_API: ${{ secrets.RDP05_INS1_REDIS_BD_TOKEN_FOR_API }}
-#           RDP05_INS2_REDIS_BD_BASE_URL_API: ${{ secrets.RDP05_INS2_REDIS_BD_BASE_URL_API }}
-#           RDP05_INS2_REDIS_BD_TOKEN_FOR_API: ${{ secrets.RDP05_INS2_REDIS_BD_TOKEN_FOR_API }}
-#           RDP05_INS3_REDIS_BD_BASE_URL_API: ${{ secrets.RDP05_INS3_REDIS_BD_BASE_URL_API }}
-#           RDP05_INS3_REDIS_BD_TOKEN_FOR_API: ${{ secrets.RDP05_INS3_REDIS_BD_TOKEN_FOR_API }}
-#           SE01_SIASIS_EMAIL_USER: ${{ secrets.SE01_SIASIS_EMAIL_USER }}
-#           SE01_SIASIS_EMAIL_APPLICATION_PASSWORD: ${{ secrets.SE01_SIASIS_EMAIL_APPLICATION_PASSWORD }}
-#           ENTORNO: ${{ secrets.ENTORNO }}
+          # Validar nivel
+          if [[ ! "$NIVEL" =~ ^[PS]$ ]]; then
+            echo "❌ Error: Nivel debe ser 'P' (Primaria) o 'S' (Secundaria)"
+            echo "Nivel recibido: '$NIVEL'"
+            exit 1
+          fi
+
+          # Validar grado
+          if [[ ! "$GRADO" =~ ^[1-6]$ ]]; then
+            echo "❌ Error: Grado debe estar entre 1 y 6"
+            echo "Grado recibido: '$GRADO'"
+            exit 1
+          fi
+
+          # Validar combinación nivel-grado
+          if [ "$NIVEL" = "P" ] && [[ ! "$GRADO" =~ ^[1-6]$ ]]; then
+            echo "❌ Error: Para primaria, el grado debe estar entre 1 y 6"
+            exit 1
+          fi
+
+          if [ "$NIVEL" = "S" ] && [[ ! "$GRADO" =~ ^[1-5]$ ]]; then
+            echo "❌ Error: Para secundaria, el grado debe estar entre 1 y 5"
+            exit 1
+          fi
+
+          echo "✅ Parámetros validados: Nivel=$NIVEL, Grado=$GRADO"
+          echo "nivel=$NIVEL" >> $GITHUB_OUTPUT
+          echo "grado=$GRADO" >> $GITHUB_OUTPUT
+
+      - name: Mostrar información de ejecución
+        run: |
+          echo "🚀 === INFORMACIÓN DE EJECUCIÓN ==="
+          echo "Evento: ${{ github.event_name }}"
+          echo "Nivel: ${{ steps.validar-parametros.outputs.nivel }}"
+          echo "Grado: ${{ steps.validar-parametros.outputs.grado }}"
+          echo "Actor: ${{ github.actor }}"
+          echo "Repositorio: ${{ github.repository }}"
+          echo "SHA: ${{ github.sha }}"
+          echo "Fecha: $(date)"
+          echo "================================"
+
+      - name: Ejecutar script de actualización
+        run: |
+          echo "📋 Ejecutando script de actualización de listas de asistencias..."
+          npx ts-node ./src/jobs/asistenciaEscolar/ActualizarListaAsistenciasHoy.ts ${{ steps.validar-parametros.outputs.nivel }} ${{ steps.validar-parametros.outputs.grado }}
+        env:
+          # PostgreSQL (RDP02)
+          RDP02_INS1_DATABASE_URL: ${{ secrets.RDP02_INS1_DATABASE_URL }}
+          RDP02_INS2_DATABASE_URL: ${{ secrets.RDP02_INS2_DATABASE_URL }}
+          RDP02_INS3_DATABASE_URL: ${{ secrets.RDP02_INS3_DATABASE_URL }}
+          # MongoDB (RDP03)
+          RDP03_INS1_DATABASE_URL_DESA: ${{ secrets.RDP03_INS1_DATABASE_URL_DESA }}
+          RDP03_INS2_DATABASE_URL_DESA: ${{ secrets.RDP03_INS2_DATABASE_URL_DESA }}
+          RDP03_INS3_DATABASE_URL_DESA: ${{ secrets.RDP03_INS3_DATABASE_URL_DESA }}
+          RDP03_INS4_DATABASE_URL_DESA: ${{ secrets.RDP03_INS4_DATABASE_URL_DESA }}
+          RDP03_INS5_DATABASE_URL_DESA: ${{ secrets.RDP03_INS5_DATABASE_URL_DESA }}
+          # Google Drive (RDP01)
+          RDP01_GOOGLE_SERVICE_ACCOUNT_EMAIL: ${{ secrets.RDP01_GOOGLE_SERVICE_ACCOUNT_EMAIL }}
+          RDP01_GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: ${{ secrets.RDP01_GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY }}
+          RDP01_GOOGLE_SERVICE_ACCOUNT_PROJECT_ID: ${{ secrets.RDP01_GOOGLE_SERVICE_ACCOUNT_PROJECT_ID }}
+          RDP01_GOOGLE_DRIVE_ROOT_SHARED_FOLDER_ID: ${{ secrets.RDP01_GOOGLE_DRIVE_ROOT_SHARED_FOLDER_ID }}
+          # Redis (RDP05)
+          RDP05_INS1_REDIS_BD_BASE_URL_API: ${{ secrets.RDP05_INS1_REDIS_BD_BASE_URL_API }}
+          RDP05_INS1_REDIS_BD_TOKEN_FOR_API: ${{ secrets.RDP05_INS1_REDIS_BD_TOKEN_FOR_API }}
+          RDP05_INS2_REDIS_BD_BASE_URL_API: ${{ secrets.RDP05_INS2_REDIS_BD_BASE_URL_API }}
+          RDP05_INS2_REDIS_BD_TOKEN_FOR_API: ${{ secrets.RDP05_INS2_REDIS_BD_TOKEN_FOR_API }}
+          RDP05_INS3_REDIS_BD_BASE_URL_API: ${{ secrets.RDP05_INS3_REDIS_BD_BASE_URL_API }}
+          RDP05_INS3_REDIS_BD_TOKEN_FOR_API: ${{ secrets.RDP05_INS3_REDIS_BD_TOKEN_FOR_API }}
+          # Entorno
+          ENTORNO: ${{ secrets.ENTORNO }}
+
+      - name: Reporte de resultado
+        if: always()
+        run: |
+          if [ $? -eq 0 ]; then
+            echo "✅ === EJECUCIÓN EXITOSA ==="
+            echo "Lista de asistencias actualizada correctamente"
+            echo "Nivel: ${{ steps.validar-parametros.outputs.nivel }}"
+            echo "Grado: ${{ steps.validar-parametros.outputs.grado }}"
+          else
+            echo "❌ === EJECUCIÓN FALLIDA ==="
+            echo "Error al actualizar lista de asistencias"
+            echo "Revisar logs anteriores para más detalles"
+            exit 1
+          fi

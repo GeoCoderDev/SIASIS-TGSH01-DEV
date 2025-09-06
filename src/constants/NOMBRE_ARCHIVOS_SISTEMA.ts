@@ -38,5 +38,32 @@ export const NOMBRES_ARCHIVOS_LISTAS_ESTUDIANTES_DIARIAS: Record<
   },
 };
 
+export type NOMBRE_ARCHIVO_ASISTENCIAS_ESCOLARES_HOY<
+  N extends NivelEducativo = NivelEducativo
+> = N extends NivelEducativo
+  ? `Asistencias_Escolares_Hoy_${N}_${GradoPorNivel<N>}`
+  : never;
+
+export const NOMBRES_ARCHIVOS_ASISTENCIAS_ESCOLARES_HOY: Record<
+  NivelEducativo,
+  Record<number, NOMBRE_ARCHIVO_ASISTENCIAS_ESCOLARES_HOY>
+> = {
+  [NivelEducativo.PRIMARIA]: {
+    1: "Asistencias_Escolares_Hoy_P_1",
+    2: "Asistencias_Escolares_Hoy_P_2",
+    3: "Asistencias_Escolares_Hoy_P_3",
+    4: "Asistencias_Escolares_Hoy_P_4",
+    5: "Asistencias_Escolares_Hoy_P_5",
+    6: "Asistencias_Escolares_Hoy_P_6",
+  },
+  [NivelEducativo.SECUNDARIA]: {
+    1: "Asistencias_Escolares_Hoy_S_1",
+    2: "Asistencias_Escolares_Hoy_S_2",
+    3: "Asistencias_Escolares_Hoy_S_3",
+    4: "Asistencias_Escolares_Hoy_S_4",
+    5: "Asistencias_Escolares_Hoy_S_5",
+  },
+};
+
 export const NOMBRE_ARCHIVO_REPORTE_ACTUALIZACION_DE_LISTAS_DE_ESTUDIANTES =
   "reporte-actualizacion-listas-estudiantes.json";
