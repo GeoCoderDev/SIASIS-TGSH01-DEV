@@ -107,7 +107,7 @@ jobs:
       - name: Ejecutar script de actualización
         run: |
           echo "📋 Ejecutando script de actualización de listas de asistencias..."
-          npx ts-node ./src/jobs/asistenciaEscolar/ActualizarListaAsistenciasHoy.ts ${{ steps.validar-parametros.outputs.nivel }} ${{ steps.validar-parametros.outputs.grado }}
+          npx ts-node ./src/jobs/transactions/TransaccionAsistenciasEscolaresRDP05_a_RDP01.ts ${{ steps.validar-parametros.outputs.nivel }} ${{ steps.validar-parametros.outputs.grado }}
         env:
           # Google Drive (RDP01)
           RDP01_GOOGLE_SERVICE_ACCOUNT_EMAIL: ${{ secrets.RDP01_GOOGLE_SERVICE_ACCOUNT_EMAIL }}
