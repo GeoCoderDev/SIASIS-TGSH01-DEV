@@ -85,15 +85,13 @@ async function main() {
     ];
 
     // Obtener fecha actual
-    const { fechaLocalPeru } = obtenerFechasActuales();
+    const { fechaUTC } = obtenerFechasActuales();
     console.log(
-      `📅 Procesando asistencias para: ${
-        fechaLocalPeru.toISOString().split("T")[0]
-      }`
+      `📅 Procesando asistencias para: ${fechaUTC.toISOString().split("T")[0]}`
     );
 
     // Verificar si es día de evento
-    const esDiaEvento = await verificarDiaEvento(fechaLocalPeru);
+    const esDiaEvento = await verificarDiaEvento(fechaUTC);
     if (esDiaEvento) {
       console.log(
         "🎉 Es día de evento, pero continuando con la actualización de listas"
@@ -108,7 +106,7 @@ async function main() {
     const asistenciasDelDia = await obtenerAsistenciasEscolaresDelDiaActual(
       nivel,
       grado,
-      fechaLocalPeru
+      fechaUTC
     );
     console.log(
       `✅ Se obtuvieron ${
@@ -121,7 +119,7 @@ async function main() {
 
     const listaAsistencias: ListaAsistenciasEscolaresHoy = {
       AsistenciasEscolaresDeHoy: asistenciasDelDia,
-      Fecha_Actualizacion: fechaLocalPeru.toISOString(),
+      Fecha_Actualizacion: fechaUTC.toISOString(),
     };
 
     console.log(

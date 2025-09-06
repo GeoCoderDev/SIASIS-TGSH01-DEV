@@ -16,4 +16,3 @@ export type AsistenciaEscolarDeUnDia = {
   [ModoRegistro.Entrada]: DetalleAsistenciaEscolar | null;
   [ModoRegistro.Salida]?: DetalleAsistenciaEscolar | null;
 };
-

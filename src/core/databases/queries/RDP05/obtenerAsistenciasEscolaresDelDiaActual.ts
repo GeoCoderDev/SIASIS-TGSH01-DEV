@@ -14,7 +14,7 @@ import {
 export async function obtenerAsistenciasEscolaresDelDiaActual(
   nivel: NivelEducativo,
   grado: number,
-  fechaLocalPeru: Date
+  fechaActualizacion: Date
 ): Promise<Record<string, AsistenciaEscolarDeUnDia>> {
   try {
     console.log(
@@ -35,7 +35,7 @@ export async function obtenerAsistenciasEscolaresDelDiaActual(
     );
 
     // Filtrar claves que correspondan al día, nivel y grado específicos
-    const fechaStr = fechaLocalPeru.toISOString().split("T")[0]; // YYYY-MM-DD
+    const fechaStr = fechaActualizacion.toISOString().split("T")[0]; // YYYY-MM-DD
     const nivelCode = nivel === NivelEducativo.PRIMARIA ? "P" : "S";
 
     const clavesFiltradas = todasLasClaves.filter((clave) => {
@@ -106,15 +106,14 @@ export async function obtenerAsistenciasEscolaresDelDiaActual(
           DesfaseSegundos: desfaseSegundos,
         };
 
-        // Inicializar asistencia del estudiante si no existe
+        // ✅ CAMBIO: Inicializar asistencia del estudiante si no existe (SIN propiedades null)
         if (!asistenciasPorEstudiante[idEstudiante]) {
           asistenciasPorEstudiante[idEstudiante] = {
             [ModoRegistro.Entrada]: null,
-            [ModoRegistro.Salida]: null,
           };
         }
 
-        // Asignar según el modo de registro
+        // ✅ CAMBIO: Solo asignar las propiedades que realmente existen
         if (modoRegistro === ModoRegistro.Entrada) {
           asistenciasPorEstudiante[idEstudiante][ModoRegistro.Entrada] =
             detalleAsistencia;
