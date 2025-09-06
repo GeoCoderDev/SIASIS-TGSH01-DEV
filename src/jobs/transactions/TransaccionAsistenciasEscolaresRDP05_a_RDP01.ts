@@ -120,7 +120,7 @@ async function main() {
     console.log("\n📋 === FASE 2: Construyendo lista de asistencias ===");
 
     const listaAsistencias: ListaAsistenciasEscolaresHoy = {
-      ListasDeAsistenciasEscolaresHoy: asistenciasDelDia,
+      AsistenciasEscolaresDeHoy: asistenciasDelDia,
       Fecha_Actualizacion: fechaLocalPeru.toISOString(),
     };
 
