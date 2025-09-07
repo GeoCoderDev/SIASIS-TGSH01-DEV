@@ -12,11 +12,18 @@ import { NOMBRES_ARCHIVOS_ASISTENCIAS_ESCOLARES_HOY } from "../../constants/NOMB
 import { obtenerAsistenciasEscolaresDelDiaActual } from "../../core/databases/queries/RDP05/obtenerAsistenciasEscolaresDelDiaActual";
 import { ListaAsistenciasEscolaresHoy } from "../../interfaces/shared/Asistencia/ListasAsistenciasEscolaresHoy";
 import { obtenerYActualizarObjetoIDsGoogleDriveDeListasDeAsistenciaHoy } from "../../core/databases/queries/RDP05/obtenerObjetoIDsDeListasAsistenciaEscolar";
+import {
+  marcarJobAsistenciaEscolaresEnEjecucion,
+  marcarJobAsistenciaEscolaresTerminado,
+} from "../../core/databases/queries/RDP05/ObtejoJobsDeListasDeAsistenciasEscolaresHoyEnEjecucion";
 
 /**
  * Función principal del script
  */
 async function main() {
+  let nivel: NivelEducativo;
+  let grado: number;
+
   try {
     // Obtener argumentos de línea de comandos
     const args = process.argv.slice(2);
@@ -32,7 +39,6 @@ async function main() {
     const [nivelParam, gradoParam] = args;
 
     // Validar nivel
-    let nivel: NivelEducativo;
     if (nivelParam.toUpperCase() === NivelEducativo.PRIMARIA) {
       nivel = NivelEducativo.PRIMARIA;
     } else if (nivelParam.toUpperCase() === NivelEducativo.SECUNDARIA) {
@@ -45,7 +51,7 @@ async function main() {
     }
 
     // Validar grado
-    const grado = parseInt(gradoParam, 10);
+    grado = parseInt(gradoParam, 10);
     if (isNaN(grado)) {
       console.error("❌ Error: Grado debe ser un número");
       process.exit(1);
@@ -74,6 +80,10 @@ async function main() {
       `🚀 Iniciando actualización de lista de asistencias para ${nivel} grado ${grado}...`
     );
 
+    // ✅ PASO 0: Marcar job como en ejecución
+    console.log("\n🔒 === PASO 0: Marcando job como EN EJECUCIÓN ===");
+    await marcarJobAsistenciaEscolaresEnEjecucion(nivel, grado);
+
     // Definir roles a bloquear
     const rolesABloquear = [
       RolesSistema.Directivo,
@@ -85,13 +95,15 @@ async function main() {
     ];
 
     // Obtener fecha actual
-    const { fechaUTC } = obtenerFechasActuales();
+    const { fechaLocalPeru } = obtenerFechasActuales();
     console.log(
-      `📅 Procesando asistencias para: ${fechaUTC.toISOString().split("T")[0]}`
+      `📅 Procesando asistencias para: ${
+        fechaLocalPeru.toISOString().split("T")[0]
+      }`
     );
 
     // Verificar si es día de evento
-    const esDiaEvento = await verificarDiaEvento(fechaUTC);
+    const esDiaEvento = await verificarDiaEvento(fechaLocalPeru);
     if (esDiaEvento) {
       console.log(
         "🎉 Es día de evento, pero continuando con la actualización de listas"
@@ -106,7 +118,7 @@ async function main() {
     const asistenciasDelDia = await obtenerAsistenciasEscolaresDelDiaActual(
       nivel,
       grado,
-      fechaUTC
+      fechaLocalPeru
     );
     console.log(
       `✅ Se obtuvieron ${
@@ -119,7 +131,7 @@ async function main() {
 
     const listaAsistencias: ListaAsistenciasEscolaresHoy = {
       AsistenciasEscolaresDeHoy: asistenciasDelDia,
-      Fecha_Actualizacion: fechaUTC.toISOString(),
+      Fecha_Actualizacion: fechaLocalPeru.toISOString(),
     };
 
     console.log(
@@ -149,7 +161,7 @@ async function main() {
       console.log(`📝 Acción realizada: ${resultado.accionRealizada}`);
     } else {
       console.error(`❌ Error al actualizar archivo: ${resultado.error}`);
-      process.exit(1);
+      throw new Error(`Error actualizando Google Drive: ${resultado.error}`);
     }
 
     console.log("\n🎉 Proceso completado exitosamente");
@@ -158,6 +170,12 @@ async function main() {
     process.exit(1);
   } finally {
     try {
+      // ✅ PASO FINAL: Marcar job como terminado (SIEMPRE se ejecuta)
+      if (nivel! !== undefined && grado! !== undefined) {
+        console.log("\n🔓 === PASO FINAL: Marcando job como TERMINADO ===");
+        await marcarJobAsistenciaEscolaresTerminado(nivel, grado);
+      }
+
       await Promise.all([closePool(), closeClient()]);
       console.log("🔌 Conexiones cerradas. Finalizando proceso...");
     } catch (closeError) {
