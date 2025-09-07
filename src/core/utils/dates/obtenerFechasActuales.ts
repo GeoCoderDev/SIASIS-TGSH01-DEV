@@ -1,14 +1,46 @@
 import { ENTORNO } from "../../../constants/ENTORNO";
 import { FECHA_HORA_MOCKEADAS } from "../../../constants/FECHA_HORA_MOCKEADAS";
+import { ZONA_HORARIA_LOCAL } from "../../../constants/ZONA_HORARIA_LOCAL";
 import { Entorno } from "../../../interfaces/shared/Entornos";
+import getRandomAPI03IntanceURL from "../helpers/functions/getRandomAPI03InstanceURL";
 import { generarFechaHoraMockeada } from "./mock";
 
-export function obtenerFechasActuales() {
-  // Si el mock está habilitado, usamos la fecha mockeada
-  const fechaUTC =
-    ENTORNO === Entorno.LOCAL && FECHA_HORA_MOCKEADAS
-      ? generarFechaHoraMockeada(2025, 8, 5, 9, 30, 0) // 12:30 UTC
-      : new Date();
+const API03_ACTIVADO_SEGUN_ENTORNO: Record<Entorno, boolean> = {
+  [Entorno.LOCAL]: true,
+  [Entorno.DESARROLLO]: true,
+  [Entorno.CERTIFICACION]: true,
+  [Entorno.PRODUCCION]: false,
+  [Entorno.TEST]: false,
+};
+
+const USAR_API03 = API03_ACTIVADO_SEGUN_ENTORNO[ENTORNO];
+
+const obtenerHoraAPI03 = async (): Promise<Date> => {
+  const response = await fetch(
+    `${getRandomAPI03IntanceURL()}/api/time?timezone=${ZONA_HORARIA_LOCAL}`
+  );
+
+  if (!response.ok) {
+    throw new Error(`Error al obtener hora de API03: ${response.status}`);
+  }
+
+  const data = await response.json();
+  return new Date(data.serverTime);
+};
+
+export async function obtenerFechasActuales() {
+  let fechaUTC: Date;
+
+  if (USAR_API03) {
+    // Usar la hora de API03 cuando esté habilitado
+    fechaUTC = await obtenerHoraAPI03();
+  } else {
+    // Lógica original: mock en LOCAL o fecha actual del sistema
+    fechaUTC =
+      ENTORNO === Entorno.LOCAL && FECHA_HORA_MOCKEADAS
+        ? generarFechaHoraMockeada(2025, 8, 5, 9, 30, 0) // 12:30 UTC
+        : new Date();
+  }
 
   // Para la fecha local de Perú (UTC-5)
   const fechaLocalPeru = new Date(fechaUTC);

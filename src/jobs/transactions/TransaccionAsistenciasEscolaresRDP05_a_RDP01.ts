@@ -95,7 +95,7 @@ async function main() {
     ];
 
     // Obtener fecha actual
-    const { fechaLocalPeru } = obtenerFechasActuales();
+    const { fechaLocalPeru } = await obtenerFechasActuales();
     console.log(
       `📅 Procesando asistencias para: ${
         fechaLocalPeru.toISOString().split("T")[0]
