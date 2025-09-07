@@ -134,7 +134,7 @@ jobs:
           RDP05_INS3_REDIS_BD_TOKEN_FOR_API: ${{ secrets.RDP05_INS3_REDIS_BD_TOKEN_FOR_API }}
           
           # API03
-          API03_BASE_URL: ${{ secrets.API03_BASE_URL }}
+          API03_URL_BASE: ${{ secrets.API03_URL_BASE }}
 
           # Entorno
           ENTORNO: ${{ secrets.ENTORNO }}
