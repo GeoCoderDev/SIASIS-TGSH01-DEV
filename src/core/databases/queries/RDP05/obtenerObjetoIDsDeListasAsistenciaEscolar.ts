@@ -4,9 +4,9 @@ import { redisClient } from "../../../../config/Redis/RedisClient";
 
 import {
   GoogleDriveIDsListasAsistenciasEscolaresHoy,
+  ListaAsistenciasEscolaresHoy,
   NOMBRE_CLAVE_GOOGLE_DRIVE_IDs_LISTAS_ASISTENCIAS_ESCOLARES_HOY,
-} from "../../../../interfaces/shared/Asistencia/ReporteModificacionesListasDeEstudiantes";
-import { ListaAsistenciasEscolaresHoy } from "../../../../interfaces/shared/Asistencia/ListasAsistenciasEscolaresHoy";
+} from "../../../../interfaces/shared/Asistencia/ListasAsistenciasEscolaresHoy";
 import { updateJsonFileInDrive } from "../../../external/google/drive/updateJsonInDrive";
 import { uploadJsonToDrive } from "../../../external/google/drive/uploadJsonToDrive";
 import { deleteFileFromDrive } from "../../../external/google/drive/deleteFileFromDrive";
