@@ -5,9 +5,9 @@ export default function getRandomAPI03IntanceURL() {
 
   switch (NumeroInstancia) {
     case 1:
-      return process.env.NEXT_PUBLIC_API03_URL_BASE!;
+      return process.env.API03_URL_BASE!;
 
     default:
-      return process.env.NEXT_PUBLIC_API03_URL_BASE!;
+      return process.env.API03_URL_BASE!;
   }
 }
