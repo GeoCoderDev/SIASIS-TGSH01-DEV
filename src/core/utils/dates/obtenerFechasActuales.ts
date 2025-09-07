@@ -21,7 +21,8 @@ const obtenerHoraAPI03 = async (): Promise<Date> => {
   );
 
   if (!response.ok) {
-    throw new Error(`Error al obtener hora de API03: ${response.status}`);
+    console.error(`Error al obtener hora de API03: ${response.status}`);
+    return new Date(); // Retornar la fecha actual en caso de error
   }
 
   const data = await response.json();
