@@ -9,16 +9,21 @@ import {
 } from "../../../../interfaces/shared/AsistenciasEscolares";
 
 /**
- * Obtiene todas las asistencias del día actual desde Redis filtradas por nivel y grado
+ * Obtiene todas las asistencias del día actual desde Redis filtradas por nivel, grado y opcionalmente por sección
  */
 export async function obtenerAsistenciasEscolaresDelDiaActual(
   nivel: NivelEducativo,
   grado: number,
-  fechaActualizacion: Date
-): Promise<Record<string, AsistenciaEscolarDeUnDia>> {
+  fechaLocalPeru: Date,
+  seccionEspecifica?: string
+): Promise<Record<string, Record<string, AsistenciaEscolarDeUnDia>>> {
   try {
     console.log(
-      `🔍 Obteniendo asistencias de ${nivel} grado ${grado} desde Redis...`
+      `🔍 Obteniendo asistencias de ${nivel} grado ${grado}${
+        seccionEspecifica
+          ? ` sección ${seccionEspecifica}`
+          : " (todas las secciones)"
+      } desde Redis...`
     );
 
     // Determinar el tipo de asistencia según el nivel
@@ -34,12 +39,12 @@ export async function obtenerAsistenciasEscolaresDelDiaActual(
       `🔑 Total de claves encontradas en Redis: ${todasLasClaves.length}`
     );
 
-    // Filtrar claves que correspondan al día, nivel y grado específicos
-    const fechaStr = fechaActualizacion.toISOString().split("T")[0]; // YYYY-MM-DD
+    // Filtrar claves que correspondan al día, nivel, grado y sección específicos
+    const fechaStr = fechaLocalPeru.toISOString().split("T")[0]; // YYYY-MM-DD
     const nivelCode = nivel === NivelEducativo.PRIMARIA ? "P" : "S";
 
     const clavesFiltradas = todasLasClaves.filter((clave) => {
-      // Formato esperado: 2025-08-29:E:E:S:1:A:77742971
+      // Formato esperado: fecha:ModoRegistro:Actor:Nivel:Grado:Seccion:IdEstudiante
       const partes = clave.split(":");
 
       if (partes.length !== 7) return false;
@@ -54,26 +59,38 @@ export async function obtenerAsistenciasEscolaresDelDiaActual(
         idEstudiante,
       ] = partes;
 
-      return (
+      const cumpleFiltrosBasicos =
         fecha === fechaStr &&
         actor === "E" &&
         nivelClave === nivelCode &&
-        parseInt(gradoClave, 10) === grado
-      );
+        parseInt(gradoClave, 10) === grado;
+
+      // Si se especifica una sección, filtrar por ella; si no, incluir todas
+      const cumpleFiltroSeccion = seccionEspecifica
+        ? seccion === seccionEspecifica
+        : true;
+
+      return cumpleFiltrosBasicos && cumpleFiltroSeccion;
     });
 
     console.log(
-      `🎯 Claves filtradas para ${nivel} grado ${grado}: ${clavesFiltradas.length}`
+      `🎯 Claves filtradas para ${nivel} grado ${grado}${
+        seccionEspecifica ? ` sección ${seccionEspecifica}` : ""
+      }: ${clavesFiltradas.length}`
     );
 
     if (clavesFiltradas.length === 0) {
-      console.log("ℹ️ No se encontraron asistencias para este nivel y grado");
+      console.log(
+        "ℹ️ No se encontraron asistencias para los filtros especificados"
+      );
       return {};
     }
 
-    // Procesar las claves filtradas para construir el objeto de asistencias
-    const asistenciasPorEstudiante: Record<string, AsistenciaEscolarDeUnDia> =
-      {};
+    // Procesar las claves filtradas para construir el objeto de asistencias agrupado por sección
+    const asistenciasPorSeccion: Record<
+      string,
+      Record<string, AsistenciaEscolarDeUnDia>
+    > = {};
 
     for (const clave of clavesFiltradas) {
       try {
@@ -106,19 +123,23 @@ export async function obtenerAsistenciasEscolaresDelDiaActual(
           DesfaseSegundos: desfaseSegundos,
         };
 
-        // ✅ CAMBIO: Inicializar asistencia del estudiante si no existe (SIN propiedades null)
-        if (!asistenciasPorEstudiante[idEstudiante]) {
-          asistenciasPorEstudiante[idEstudiante] = {
-            [ModoRegistro.Entrada]: null,
-          };
+        // ✅ Inicializar sección si no existe
+        if (!asistenciasPorSeccion[seccion]) {
+          asistenciasPorSeccion[seccion] = {};
         }
 
-        // ✅ CAMBIO: Solo asignar las propiedades que realmente existen
+        // ✅ Inicializar asistencia del estudiante en la sección si no existe
+        if (!asistenciasPorSeccion[seccion][idEstudiante]) {
+          asistenciasPorSeccion[seccion][idEstudiante] =
+            {} as AsistenciaEscolarDeUnDia;
+        }
+
+        // ✅ Asignar según el modo de registro (acumulando entradas y salidas)
         if (modoRegistro === ModoRegistro.Entrada) {
-          asistenciasPorEstudiante[idEstudiante][ModoRegistro.Entrada] =
+          asistenciasPorSeccion[seccion][idEstudiante][ModoRegistro.Entrada] =
             detalleAsistencia;
         } else if (modoRegistro === ModoRegistro.Salida) {
-          asistenciasPorEstudiante[idEstudiante][ModoRegistro.Salida] =
+          asistenciasPorSeccion[seccion][idEstudiante][ModoRegistro.Salida] =
             detalleAsistencia;
         }
       } catch (error) {
@@ -128,24 +149,40 @@ export async function obtenerAsistenciasEscolaresDelDiaActual(
 
     console.log(
       `✅ Procesadas asistencias de ${
-        Object.keys(asistenciasPorEstudiante).length
-      } estudiantes`
+        Object.keys(asistenciasPorSeccion).length
+      } secciones`
     );
 
-    // Mostrar resumen por tipo de registro
-    let contadorEntradas = 0;
-    let contadorSalidas = 0;
+    // Mostrar resumen por sección
+    let totalEstudiantes = 0;
+    let totalEntradas = 0;
+    let totalSalidas = 0;
 
-    Object.values(asistenciasPorEstudiante).forEach((asistencia) => {
-      if (asistencia[ModoRegistro.Entrada]) contadorEntradas++;
-      if (asistencia[ModoRegistro.Salida]) contadorSalidas++;
+    Object.entries(asistenciasPorSeccion).forEach(([seccion, estudiantes]) => {
+      const numEstudiantes = Object.keys(estudiantes).length;
+      totalEstudiantes += numEstudiantes;
+
+      let entradasSeccion = 0;
+      let salidasSeccion = 0;
+
+      Object.values(estudiantes).forEach((asistencia) => {
+        if (asistencia[ModoRegistro.Entrada]) entradasSeccion++;
+        if (asistencia[ModoRegistro.Salida]) salidasSeccion++;
+      });
+
+      totalEntradas += entradasSeccion;
+      totalSalidas += salidasSeccion;
+
+      console.log(
+        `📊 Sección ${seccion}: ${numEstudiantes} estudiantes, ${entradasSeccion} entradas, ${salidasSeccion} salidas`
+      );
     });
 
     console.log(
-      `📊 Resumen: ${contadorEntradas} entradas, ${contadorSalidas} salidas`
+      `🎯 TOTAL: ${totalEstudiantes} estudiantes, ${totalEntradas} entradas, ${totalSalidas} salidas`
     );
 
-    return asistenciasPorEstudiante;
+    return asistenciasPorSeccion;
   } catch (error) {
     console.error(
       "❌ Error obteniendo asistencias del día actual desde Redis:",

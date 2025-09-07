@@ -12,10 +12,7 @@ import { NOMBRES_ARCHIVOS_ASISTENCIAS_ESCOLARES_HOY } from "../../constants/NOMB
 import { obtenerAsistenciasEscolaresDelDiaActual } from "../../core/databases/queries/RDP05/obtenerAsistenciasEscolaresDelDiaActual";
 import { ListaAsistenciasEscolaresHoy } from "../../interfaces/shared/Asistencia/ListasAsistenciasEscolaresHoy";
 import { obtenerYActualizarObjetoIDsGoogleDriveDeListasDeAsistenciaHoy } from "../../core/databases/queries/RDP05/obtenerObjetoIDsDeListasAsistenciaEscolar";
-import {
-  marcarJobAsistenciaEscolaresEnEjecucion,
-  marcarJobAsistenciaEscolaresTerminado,
-} from "../../core/databases/queries/RDP05/ObtejoJobsDeListasDeAsistenciasEscolaresHoyEnEjecucion";
+import { marcarJobAsistenciaEscolaresEnEjecucion, marcarJobAsistenciaEscolaresTerminado } from "../../core/databases/queries/RDP05/ObtejoJobsDeListasDeAsistenciasEscolaresHoyEnEjecucion";
 
 /**
  * Función principal del script
