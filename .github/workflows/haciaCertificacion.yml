@@ -25,7 +25,7 @@ jobs:
           echo "Configurando repositorio de destino 1..."
           mkdir -p temp-repo1
           cd temp-repo1
-          git clone https://x-access-token:${{ secrets.SIASIS_TPS01_REPOSITORIO_CERTIFICACION_PAT }}@github.com/SIASIS-TPS01-CERT/TPS01.git .
+          git clone https://x-access-token:${{ secrets.SIASIS_TGSH01_REPOSITORIO_CERTIFICACION_PAT }}@github.com/SIASIS-TGSH01-CERT/TGSH01.git .
 
           echo "Limpiando repositorio destino 1 (excepto .git)..."
           find . -mindepth 1 -maxdepth 1 -not -path "./.git" -exec rm -rf {} \;
