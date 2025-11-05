@@ -1,3 +1,4 @@
+# .github/workflows/generar-reporte-asistencia-escolar.yml
 name: Generar Reporte de Asistencia Escolar
 
 on:
@@ -40,7 +41,13 @@ jobs:
             PAYLOAD='${{ github.event.inputs.payload }}'
           elif [ "${{ github.event_name }}" = "repository_dispatch" ]; then
             echo "Ejecución por HTTP detectada"
-            PAYLOAD='${{ toJson(github.event.client_payload) }}'
+            # CORRECCIÓN: Convertir el objeto client_payload completo a JSON en una sola línea
+            PAYLOAD=$(cat <<'EOF'
+          ${{ toJson(github.event.client_payload) }}
+          EOF
+          )
+            # Comprimir a una sola línea
+            PAYLOAD=$(echo "$PAYLOAD" | jq -c .)
           else
             echo "❌ Tipo de evento no soportado: ${{ github.event_name }}"
             exit 1
@@ -50,6 +57,7 @@ jobs:
           echo "$PAYLOAD" | jq . > /dev/null 2>&1
           if [ $? -ne 0 ]; then
             echo "❌ Error: El payload no es un JSON válido"
+            echo "Payload recibido: $PAYLOAD"
             exit 1
           fi
 
@@ -86,7 +94,11 @@ jobs:
           fi
 
           echo "✅ Payload validado correctamente"
-          echo "payload=$PAYLOAD" >> $GITHUB_OUTPUT
+          
+          # CORRECCIÓN CRÍTICA: Usar delimitador EOF para valores multilínea
+          echo "payload<<EOF" >> $GITHUB_OUTPUT
+          echo "$PAYLOAD" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Mostrar información de ejecución
         run: |
@@ -103,8 +115,10 @@ jobs:
         run: |
           echo "📋 Ejecutando script de generación de reporte..."
           
-          # Construir comando con el payload
+          # Obtener el payload del step anterior
           PAYLOAD='${{ steps.validar-payload.outputs.payload }}'
+          
+          echo "Payload a procesar: $PAYLOAD"
           
           # Ejecutar script
           npx ts-node ./src/jobs/reportes/GenerarReporteAsistenciaEscolar.ts "$PAYLOAD"
@@ -148,7 +162,7 @@ jobs:
             echo "✅ === EJECUCIÓN EXITOSA ==="
             echo "Reporte de asistencia generado correctamente"
             PAYLOAD='${{ steps.validar-payload.outputs.payload }}'
-            COMBINACION=$(echo "$PAYLOAD" | jq -r '.Combinacion_Parametros_Reporte')
+            COMBINACION=$(echo "$PAYLOAD" | jq -r '.Combinacion_Parametros_Reporte // "N/A"')
             echo "Combinación de parámetros: $COMBINACION"
           else
             echo "❌ === EJECUCIÓN FALLIDA ==="
