@@ -121,7 +121,7 @@ jobs:
           echo "Payload a procesar: $PAYLOAD"
           
           # Ejecutar script
-          npx ts-node ./src/jobs/reportes/GenerarReporteDeAsistenciaEscolar.ts "$PAYLOAD"
+          npx ts-node ./src/jobs/reports/GenerarReporteDeAsistenciaEscolar.ts "$PAYLOAD"
         env:
           # Google Drive (RDP01)
           RDP01_GOOGLE_SERVICE_ACCOUNT_EMAIL: ${{ secrets.RDP01_GOOGLE_SERVICE_ACCOUNT_EMAIL }}
