@@ -19,6 +19,7 @@ import { actualizarEstadoReporteAsistenciaEscolar } from "../../core/databases/q
 import { obtenerConfiguracionesToleranciasTardanza } from "../../core/databases/queries/RDP02/ajustes-generales/obtenerConfiguracionesToleranciasTardanza";
 import { obtenerAsistenciasEstudiantesPorRango } from "../../core/databases/queries/RDP03/asistencias-escolares/obtenerAsistenciasEstudiantesPorRango";
 import { obtenerDatosEstudiantesYAulasDesdeGoogleDrive } from "../../core/databases/queries/RDP01/obtenerDatosEstudiantesYAulasDesdeGoogleDrive";
+import { getDiasDisponiblesPorMes } from "../../core/utils/helpers/getters/getDiasDisponiblesPorMes";
 
 /**
  * Función principal del script
@@ -194,7 +195,8 @@ async function main() {
         aulasFiltradas,
         estudiantesMap,
         rangoTiempo,
-        toleranciaSegundos
+        toleranciaSegundos,
+        aulasSeleccionadas.Nivel // ✅ Pasar el nivel educativo
       );
     } else {
       reporteGenerado = generarReportePorMeses(
@@ -205,7 +207,6 @@ async function main() {
         toleranciaSegundos
       );
     }
-
     console.log("✅ Reporte generado exitosamente");
     console.log(
       `   - ${Object.keys(reporteGenerado).length} aulas en el reporte`
@@ -281,9 +282,15 @@ function generarReportePorDias(
   aulas: any[],
   estudiantesMap: Map<string, any>,
   rangoTiempo: any,
-  toleranciaSegundos: number
+  toleranciaSegundos: number,
+  nivelEducativo: NivelEducativo
 ): ReporteAsistenciaEscolarPorDias {
   const reporte: ReporteAsistenciaEscolarPorDias = {};
+
+  // Obtener fecha actual para getDiasDisponiblesPorMes
+  const ahora = new Date();
+  const diaActual = ahora.getDate();
+  const horaActual = ahora.getHours();
 
   // Agrupar estudiantes por aula
   const estudiantesPorAula = new Map<string, Set<string>>();
@@ -303,9 +310,45 @@ function generarReportePorDias(
       ConteoEstadosAsistencia: {},
     };
 
-    // Inicializar contadores para cada mes
+    // Inicializar contadores para cada mes y sus días hábiles
     for (let mes = rangoTiempo.DesdeMes; mes <= rangoTiempo.HastaMes; mes++) {
       reporte[aula.Id_Aula].ConteoEstadosAsistencia[mes] = {};
+
+      // Obtener días disponibles del mes usando la función proporcionada
+      const diasDisponibles = getDiasDisponiblesPorMes(
+        mes,
+        diaActual,
+        horaActual,
+        nivelEducativo
+      );
+
+      // Inicializar cada día hábil con contadores en 0
+      for (const { numeroDiaDelMes } of diasDisponibles) {
+        const dia = numeroDiaDelMes;
+
+        // Validar rango de días específico si aplica
+        let incluirDia = true;
+
+        if (rangoTiempo.DesdeDia !== null && mes === rangoTiempo.DesdeMes) {
+          if (dia < rangoTiempo.DesdeDia) {
+            incluirDia = false;
+          }
+        }
+
+        if (rangoTiempo.HastaDia !== null && mes === rangoTiempo.HastaMes) {
+          if (dia > rangoTiempo.HastaDia) {
+            incluirDia = false;
+          }
+        }
+
+        if (incluirDia) {
+          reporte[aula.Id_Aula].ConteoEstadosAsistencia[mes][dia] = {
+            [EstadosAsistenciaEscolar.Temprano]: 0,
+            [EstadosAsistenciaEscolar.Tarde]: 0,
+            [EstadosAsistenciaEscolar.Falta]: 0,
+          };
+        }
+      }
     }
   }
 
@@ -318,31 +361,20 @@ function generarReportePorDias(
     if (!reporte[idAula]) continue;
 
     const asistenciasMensuales = JSON.parse(registro.Asistencias_Mensuales);
+    const mes = registro.Mes;
+
+    // Verificar que el mes esté en el reporte
+    if (!reporte[idAula].ConteoEstadosAsistencia[mes]) continue;
 
     // Procesar cada día del mes
     for (const [diaStr, asistenciaDia] of Object.entries(
       asistenciasMensuales
     )) {
       const dia = parseInt(diaStr, 10);
-      const mes = registro.Mes;
 
-      // Validar rango de días si aplica
-      if (rangoTiempo.DesdeDia !== null && rangoTiempo.HastaDia !== null) {
-        if (mes === rangoTiempo.DesdeMes && dia < rangoTiempo.DesdeDia) {
-          continue;
-        }
-        if (mes === rangoTiempo.HastaMes && dia > rangoTiempo.HastaDia) {
-          continue;
-        }
-      }
-
-      // Inicializar contadores del día si no existen
+      // Verificar que el día esté inicializado en el reporte
       if (!reporte[idAula].ConteoEstadosAsistencia[mes][dia]) {
-        reporte[idAula].ConteoEstadosAsistencia[mes][dia] = {
-          [EstadosAsistenciaEscolar.Temprano]: 0,
-          [EstadosAsistenciaEscolar.Tarde]: 0,
-          [EstadosAsistenciaEscolar.Falta]: 0,
-        };
+        continue; // Este día no está en el rango válido
       }
 
       // Determinar el estado de asistencia
