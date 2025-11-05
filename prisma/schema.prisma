@@ -560,3 +560,14 @@ model T_Modificaciones_Especificas {
 
   @@map("T_Modificaciones_Especificas")
 }
+
+model T_Reportes_Asistencia_Escolar {
+  Combinacion_Parametros_Reporte String   @id @db.VarChar(40)
+  Estado_Reporte                 String   @db.VarChar(20)
+  Datos_Google_Drive_Id          String?  @db.Text
+  Fecha_Generacion               DateTime @default(now())
+  Rol_Usuario                    String   @db.VarChar(2)
+  Id_Usuario                     String   @db.VarChar(20)
+
+  @@map("T_Reportes_Asistencia_Escolar")
+}

@@ -1,4 +1,4 @@
-// src/core/database/queries/eventos/verificarDiaEvento.ts
+
 import { T_Eventos } from "@prisma/client";
 import RDP02_DB_INSTANCES from "../../../connectors/postgres";
 

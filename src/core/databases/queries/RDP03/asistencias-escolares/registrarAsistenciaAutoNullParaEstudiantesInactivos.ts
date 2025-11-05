@@ -278,7 +278,7 @@ export async function registrarFaltasAutomaticasEstudiantesInactivos(): Promise<
       "🔄 Iniciando registro de faltas automáticas para estudiantes inactivos..."
     );
 
-    const { fechaLocalPeru } = obtenerFechasActuales();
+    const { fechaLocalPeru } = await obtenerFechasActuales();
     const mes = fechaLocalPeru.getUTCMonth() + 1;
     const dia = fechaLocalPeru.getUTCDate();
 

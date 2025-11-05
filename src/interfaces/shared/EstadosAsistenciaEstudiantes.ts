@@ -1,10 +1,8 @@
-
-
-export enum EstadosAsistencia {
+export enum EstadosAsistenciaEscolar {
   Temprano = "A",
   Tarde = "T",
   Falta = "F",
   Inactivo = "-",
-  Feriado = "E",
+  Evento = "E",
   Vacaciones = "V",
 }

@@ -1,0 +1,158 @@
+name: Generar Reporte de Asistencia Escolar
+
+on:
+  # Ejecución manual desde GitHub
+  workflow_dispatch:
+    inputs:
+      payload:
+        description: "Payload del reporte en formato JSON"
+        required: true
+        type: string
+        default: '{"Combinacion_Parametros_Reporte":"D3A6BP4A","Estado_Reporte":"P","Datos_Google_Drive_Id":null,"Fecha_Generacion":"2025-01-15T00:00:00.000Z","Rol_Usuario":"D","Id_Usuario":"15430124"}'
+
+  # Ejecución desde solicitud HTTP externa
+  repository_dispatch:
+    types: [generar-reporte-asistencia]
+
+jobs:
+  generar-reporte:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Instalar dependencias
+        run: npm install
+
+      - name: Validar y preparar payload
+        id: validar-payload
+        run: |
+          # Determinar origen del payload
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "Ejecución manual detectada"
+            PAYLOAD='${{ github.event.inputs.payload }}'
+          elif [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            echo "Ejecución por HTTP detectada"
+            PAYLOAD='${{ toJson(github.event.client_payload) }}'
+          else
+            echo "❌ Tipo de evento no soportado: ${{ github.event_name }}"
+            exit 1
+          fi
+
+          # Validar que el payload sea JSON válido
+          echo "$PAYLOAD" | jq . > /dev/null 2>&1
+          if [ $? -ne 0 ]; then
+            echo "❌ Error: El payload no es un JSON válido"
+            exit 1
+          fi
+
+          # Validar campos requeridos
+          COMBINACION=$(echo "$PAYLOAD" | jq -r '.Combinacion_Parametros_Reporte')
+          ESTADO=$(echo "$PAYLOAD" | jq -r '.Estado_Reporte')
+          FECHA=$(echo "$PAYLOAD" | jq -r '.Fecha_Generacion')
+          ROL=$(echo "$PAYLOAD" | jq -r '.Rol_Usuario')
+          ID_USUARIO=$(echo "$PAYLOAD" | jq -r '.Id_Usuario')
+
+          if [ "$COMBINACION" = "null" ] || [ -z "$COMBINACION" ]; then
+            echo "❌ Error: Falta campo Combinacion_Parametros_Reporte"
+            exit 1
+          fi
+
+          if [ "$ESTADO" = "null" ] || [ -z "$ESTADO" ]; then
+            echo "❌ Error: Falta campo Estado_Reporte"
+            exit 1
+          fi
+
+          if [ "$FECHA" = "null" ] || [ -z "$FECHA" ]; then
+            echo "❌ Error: Falta campo Fecha_Generacion"
+            exit 1
+          fi
+
+          if [ "$ROL" = "null" ] || [ -z "$ROL" ]; then
+            echo "❌ Error: Falta campo Rol_Usuario"
+            exit 1
+          fi
+
+          if [ "$ID_USUARIO" = "null" ] || [ -z "$ID_USUARIO" ]; then
+            echo "❌ Error: Falta campo Id_Usuario"
+            exit 1
+          fi
+
+          echo "✅ Payload validado correctamente"
+          echo "payload=$PAYLOAD" >> $GITHUB_OUTPUT
+
+      - name: Mostrar información de ejecución
+        run: |
+          echo "🚀 === INFORMACIÓN DE EJECUCIÓN ==="
+          echo "Evento: ${{ github.event_name }}"
+          echo "Payload: ${{ steps.validar-payload.outputs.payload }}"
+          echo "Actor: ${{ github.actor }}"
+          echo "Repositorio: ${{ github.repository }}"
+          echo "SHA: ${{ github.sha }}"
+          echo "Fecha: $(date)"
+          echo "================================"
+
+      - name: Ejecutar script de generación de reporte
+        run: |
+          echo "📋 Ejecutando script de generación de reporte..."
+          
+          # Construir comando con el payload
+          PAYLOAD='${{ steps.validar-payload.outputs.payload }}'
+          
+          # Ejecutar script
+          npx ts-node ./src/jobs/reportes/GenerarReporteAsistenciaEscolar.ts "$PAYLOAD"
+        env:
+          # Google Drive (RDP01)
+          RDP01_GOOGLE_SERVICE_ACCOUNT_EMAIL: ${{ secrets.RDP01_GOOGLE_SERVICE_ACCOUNT_EMAIL }}
+          RDP01_GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: ${{ secrets.RDP01_GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY }}
+          RDP01_GOOGLE_SERVICE_ACCOUNT_PROJECT_ID: ${{ secrets.RDP01_GOOGLE_SERVICE_ACCOUNT_PROJECT_ID }}
+          RDP01_GOOGLE_DRIVE_ROOT_SHARED_FOLDER_ID: ${{ secrets.RDP01_GOOGLE_DRIVE_ROOT_SHARED_FOLDER_ID }}
+          
+          # PostgreSQL (RDP02)
+          RDP02_INS1_DATABASE_URL: ${{ secrets.RDP02_INS1_DATABASE_URL }}
+          RDP02_INS2_DATABASE_URL: ${{ secrets.RDP02_INS2_DATABASE_URL }}
+          RDP02_INS3_DATABASE_URL: ${{ secrets.RDP02_INS3_DATABASE_URL }}
+          
+          # MongoDB (RDP03)
+          RDP03_INS1_DATABASE_URL: ${{ secrets.RDP03_INS1_DATABASE_URL }}
+          RDP03_INS2_DATABASE_URL: ${{ secrets.RDP03_INS2_DATABASE_URL }}
+          RDP03_INS3_DATABASE_URL: ${{ secrets.RDP03_INS3_DATABASE_URL }}
+          RDP03_INS4_DATABASE_URL: ${{ secrets.RDP03_INS4_DATABASE_URL }}
+          RDP03_INS5_DATABASE_URL: ${{ secrets.RDP03_INS5_DATABASE_URL }}
+
+          # Redis (RDP05)
+          RDP05_INS1_REDIS_BD_BASE_URL_API: ${{ secrets.RDP05_INS1_REDIS_BD_BASE_URL_API }}
+          RDP05_INS1_REDIS_BD_TOKEN_FOR_API: ${{ secrets.RDP05_INS1_REDIS_BD_TOKEN_FOR_API }}
+          RDP05_INS2_REDIS_BD_BASE_URL_API: ${{ secrets.RDP05_INS2_REDIS_BD_BASE_URL_API }}
+          RDP05_INS2_REDIS_BD_TOKEN_FOR_API: ${{ secrets.RDP05_INS2_REDIS_BD_TOKEN_FOR_API }}
+          RDP05_INS3_REDIS_BD_BASE_URL_API: ${{ secrets.RDP05_INS3_REDIS_BD_BASE_URL_API }}
+          RDP05_INS3_REDIS_BD_TOKEN_FOR_API: ${{ secrets.RDP05_INS3_REDIS_BD_TOKEN_FOR_API }}
+
+          # API03
+          API03_URL_BASE: ${{ secrets.API03_URL_BASE }}
+
+          # Entorno
+          ENTORNO: ${{ secrets.ENTORNO }}
+
+      - name: Reporte de resultado
+        if: always()
+        run: |
+          if [ $? -eq 0 ]; then
+            echo "✅ === EJECUCIÓN EXITOSA ==="
+            echo "Reporte de asistencia generado correctamente"
+            PAYLOAD='${{ steps.validar-payload.outputs.payload }}'
+            COMBINACION=$(echo "$PAYLOAD" | jq -r '.Combinacion_Parametros_Reporte')
+            echo "Combinación de parámetros: $COMBINACION"
+          else
+            echo "❌ === EJECUCIÓN FALLIDA ==="
+            echo "Error al generar reporte de asistencia"
+            echo "Revisar logs anteriores para más detalles"
+            exit 1
+          fi
