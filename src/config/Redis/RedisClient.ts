@@ -3,46 +3,68 @@
 import { Redis } from "@upstash/redis";
 import { TipoAsistencia } from "../../interfaces/shared/AsistenciaRequests";
 
-
-// Estructura para almacenar las instancias de Redis
-type RedisInstances = {
-  [key in TipoAsistencia]: Redis[];
-};
+export enum GruposIntanciasDeRedis {
+  ParaAsistenciasDePersonal = "ParaAsistenciasDePersonal",
+  ParaAsistenciasDeEstudiantesSecundaria = "ParaAsistenciasDeEstudiantesSecundaria",
+  ParaAsistenciasDeEstudiantesPrimaria = "ParaAsistenciasDeEstudiantesPrimaria",
+  ParaReportesDeAsistenciasEscolares = "ParaReportesDeAsistenciasEscolares",
+}
 
 // Inicialización de las instancias de Redis
-const redisInstances: RedisInstances = {
-  [TipoAsistencia.ParaPersonal]: [
+const redisInstances: {
+  [key in GruposIntanciasDeRedis]: Redis[];
+} = {
+  [GruposIntanciasDeRedis.ParaAsistenciasDePersonal]: [
     new Redis({
       url: process.env.RDP05_INS1_REDIS_BD_BASE_URL_API!,
       token: process.env.RDP05_INS1_REDIS_BD_TOKEN_FOR_API!,
     }),
     // Aquí puedes agregar más instancias para este tipo en el futuro
   ],
-  [TipoAsistencia.ParaEstudiantesSecundaria]: [
+  [GruposIntanciasDeRedis.ParaAsistenciasDeEstudiantesSecundaria]: [
     new Redis({
       url: process.env.RDP05_INS2_REDIS_BD_BASE_URL_API!,
       token: process.env.RDP05_INS2_REDIS_BD_TOKEN_FOR_API!,
     }),
     // Aquí puedes agregar más instancias para este tipo en el futuro
   ],
-  [TipoAsistencia.ParaEstudiantesPrimaria]: [
+  [GruposIntanciasDeRedis.ParaAsistenciasDeEstudiantesPrimaria]: [
     new Redis({
       url: process.env.RDP05_INS3_REDIS_BD_BASE_URL_API!,
       token: process.env.RDP05_INS3_REDIS_BD_TOKEN_FOR_API!,
     }),
     // Aquí puedes agregar más instancias para este tipo en el futuro
   ],
+  [GruposIntanciasDeRedis.ParaReportesDeAsistenciasEscolares]: [
+    new Redis({
+      url: process.env.RDP05_INS1_REDIS_BD_BASE_URL_API!,
+      token: process.env.RDP05_INS1_REDIS_BD_TOKEN_FOR_API!,
+    }),
+    // Aquí puedes agregar más instancias para este tipo en el futuro
+  ],
+};
+
+export const GrupoInstaciasDeRedisPorTipoAsistencia: Record<
+  TipoAsistencia,
+  GruposIntanciasDeRedis
+> = {
+  [TipoAsistencia.ParaPersonal]:
+    GruposIntanciasDeRedis.ParaAsistenciasDePersonal,
+  [TipoAsistencia.ParaEstudiantesSecundaria]:
+    GruposIntanciasDeRedis.ParaAsistenciasDeEstudiantesSecundaria,
+  [TipoAsistencia.ParaEstudiantesPrimaria]:
+    GruposIntanciasDeRedis.ParaAsistenciasDeEstudiantesPrimaria,
 };
 
 // Función para obtener una instancia aleatoria de Redis
 export const getRandomRedisClient = (
-  tipoAsistencia?: TipoAsistencia
+  grupoInstancias?: GruposIntanciasDeRedis
 ): Redis => {
-  if (tipoAsistencia !== undefined) {
-    const instances = redisInstances[tipoAsistencia];
+  if (grupoInstancias !== undefined) {
+    const instances = redisInstances[grupoInstancias];
     if (!instances || instances.length === 0) {
       throw new Error(
-        `No hay instancias disponibles para el tipo de asistencia: ${tipoAsistencia}`
+        `No hay instancias disponibles para el grupo de instancias: ${grupoInstancias}`
       );
     }
 
@@ -62,12 +84,12 @@ export const getRandomRedisClient = (
 
 // Función para establecer un valor en todas las instancias de Redis de un tipo específico
 export const setInAllInstancesByType = async (
-  tipoAsistencia: TipoAsistencia,
+  grupoInstancias: GruposIntanciasDeRedis,
   key: string,
   value: any,
   expireIn?: number
 ): Promise<void> => {
-  const instances = redisInstances[tipoAsistencia];
+  const instances = redisInstances[grupoInstancias];
 
   const setPromises = instances.map(async (redis) => {
     if (expireIn !== undefined) {
@@ -102,19 +124,19 @@ export const setInAllInstances = async (
 };
 
 // Función compatible con tu versión anterior, pero mejorada para usar el sistema de instancias múltiples
-export const redisClient = (tipoAsistencia?: TipoAsistencia) => {
+export const redisClient = (grupoInstancias?: GruposIntanciasDeRedis) => {
   // Devolvemos un objeto con métodos que manejan las operaciones en múltiples instancias
   return {
     get: async (key: string) => {
       // Siempre obtenemos de una instancia aleatoria (del tipo especificado o de cualquiera)
-      const redis = getRandomRedisClient(tipoAsistencia);
+      const redis = getRandomRedisClient(grupoInstancias);
       return await redis.get(key);
     },
 
     set: async (key: string, value: any, expireIn?: number) => {
       try {
-        if (tipoAsistencia !== undefined) {
-          await setInAllInstancesByType(tipoAsistencia, key, value, expireIn);
+        if (grupoInstancias !== undefined) {
+          await setInAllInstancesByType(grupoInstancias, key, value, expireIn);
         } else {
           await setInAllInstances(key, value, expireIn);
         }
@@ -126,11 +148,11 @@ export const redisClient = (tipoAsistencia?: TipoAsistencia) => {
     },
 
     del: async (key: string) => {
-      if (tipoAsistencia !== undefined) {
+      if (grupoInstancias !== undefined) {
         // Si se especifica un tipo, primero establecemos null (con expiración rápida) en todas las instancias de ese tipo
-        await setInAllInstancesByType(tipoAsistencia, key, null, 1);
+        await setInAllInstancesByType(grupoInstancias, key, null, 1);
         // Luego eliminamos de una instancia aleatoria de ese tipo
-        const redis = getRandomRedisClient(tipoAsistencia);
+        const redis = getRandomRedisClient(grupoInstancias);
         return await redis.del(key);
       } else {
         // Si no se especifica tipo, establecemos null en todas las instancias
@@ -145,8 +167,8 @@ export const redisClient = (tipoAsistencia?: TipoAsistencia) => {
     keys: async (pattern: string) => {
       // El método keys se ejecuta siempre en una instancia específica
       // No es necesario ejecutarlo en todas las instancias
-      if (tipoAsistencia !== undefined) {
-        const redis = getRandomRedisClient(tipoAsistencia);
+      if (grupoInstancias !== undefined) {
+        const redis = getRandomRedisClient(grupoInstancias);
         return await redis.keys(pattern);
       } else {
         // Si no se especifica tipo, buscamos en una instancia aleatoria

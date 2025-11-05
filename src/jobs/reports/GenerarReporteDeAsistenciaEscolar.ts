@@ -1,3 +1,4 @@
+// src/jobs/reportes/GenerarReporteAsistenciaEscolar.ts
 import { closeClient } from "../../core/databases/connectors/mongodb";
 import { closePool } from "../../core/databases/connectors/postgres";
 
@@ -8,23 +9,28 @@ import {
   TipoReporteAsistenciaEscolar,
 } from "../../interfaces/shared/ReporteAsistenciaEscolar";
 import { T_Reportes_Asistencia_Escolar } from "@prisma/client";
-
 import { uploadJsonToDrive } from "../../core/external/google/drive/uploadJsonToDrive";
 import { NivelEducativo } from "../../interfaces/shared/NivelEducativo";
 import { EstadosAsistenciaEscolar } from "../../interfaces/shared/EstadosAsistenciaEstudiantes";
 import { ModoRegistro } from "../../interfaces/shared/ModoRegistroPersonal";
-import decodificarCombinacionParametrosParaReporteEscolar from "../../core/utils/helpers/decoders/reportes-asistencia-escolares/decodificarCombinacionParametrosParaReporteEscolar";
+import { obtenerReporteExistente } from "../../core/databases/queries/RDP02/reportes-asistencias-escolares/obtenerReporteExistente";
+import { actualizarReporteAsistenciaEscolarEnRedis } from "../../core/databases/queries/RDP05/reports/actualizarReporteAsistenciaEscolar";
 import { registrarReporteAsistenciaEscolar } from "../../core/databases/queries/RDP02/reportes-asistencias-escolares/registrarReporteAsistenciaEscolar";
+import decodificarCombinacionParametrosParaReporteEscolar from "../../core/utils/helpers/decoders/reportes-asistencia-escolares/decodificarCombinacionParametrosParaReporteEscolar";
 import { actualizarEstadoReporteAsistenciaEscolar } from "../../core/databases/queries/RDP02/reportes-asistencias-escolares/actualizarEstadoReporteAsistenciaEscolar";
 import { obtenerConfiguracionesToleranciasTardanza } from "../../core/databases/queries/RDP02/ajustes-generales/obtenerConfiguracionesToleranciasTardanza";
-import { obtenerAsistenciasEstudiantesPorRango } from "../../core/databases/queries/RDP03/asistencias-escolares/obtenerAsistenciasEstudiantesPorRango";
 import { obtenerDatosEstudiantesYAulasDesdeGoogleDrive } from "../../core/databases/queries/RDP01/obtenerDatosEstudiantesYAulasDesdeGoogleDrive";
+import { obtenerAsistenciasEstudiantesPorRango } from "../../core/databases/queries/RDP03/asistencias-escolares/obtenerAsistenciasEstudiantesPorRango";
 import { getDiasDisponiblesPorMes } from "../../core/utils/helpers/getters/getDiasDisponiblesPorMes";
+
+interface PayloadReporte extends Omit<T_Reportes_Asistencia_Escolar, never> {}
 
 /**
  * Función principal del script
  */
 async function main() {
+  let payloadOriginal: PayloadReporte | null = null;
+
   try {
     // ============================================================
     // PASO 1: Validar argumentos de entrada
@@ -40,9 +46,10 @@ async function main() {
       process.exit(1);
     }
 
-    let payload: T_Reportes_Asistencia_Escolar;
+    let payload: PayloadReporte;
     try {
       payload = JSON.parse(args[0]);
+      payloadOriginal = payload; // Guardar para uso en catch
     } catch (error) {
       console.error("❌ Error: El payload no es un JSON válido");
       process.exit(1);
@@ -51,16 +58,45 @@ async function main() {
     console.log("📋 Payload recibido:", payload);
 
     // ============================================================
-    // PASO 2: Registrar el reporte en PostgreSQL con estado PENDIENTE
+    // PASO 2: Verificar si ya existe en PostgreSQL (RDP02)
     // ============================================================
-    console.log("\n📝 === PASO 2: Registrando reporte en PostgreSQL ===");
+    console.log(
+      "\n🔍 === PASO 2: Verificando si el reporte ya existe en PostgreSQL ==="
+    );
+
+    const reporteExistente = await obtenerReporteExistente(
+      payload.Combinacion_Parametros_Reporte
+    );
+
+    if (reporteExistente) {
+      console.log(
+        `✅ Reporte encontrado en PostgreSQL con estado: ${reporteExistente.Estado_Reporte}`
+      );
+
+      // Actualizar Redis con los datos existentes de PostgreSQL
+      await actualizarReporteAsistenciaEscolarEnRedis(reporteExistente);
+
+      console.log(
+        "✅ Redis actualizado con datos existentes de PostgreSQL. Finalizando proceso."
+      );
+      process.exit(0);
+    }
+
+    console.log(
+      "ℹ️  Reporte no existe en PostgreSQL, procediendo con la creación"
+    );
+
+    // ============================================================
+    // PASO 3: Registrar el reporte en PostgreSQL con estado PENDIENTE
+    // ============================================================
+    console.log("\n📝 === PASO 3: Registrando reporte en PostgreSQL ===");
 
     await registrarReporteAsistenciaEscolar(payload);
 
     // ============================================================
-    // PASO 3: Decodificar parámetros del reporte
+    // PASO 4: Decodificar parámetros del reporte
     // ============================================================
-    console.log("\n🔍 === PASO 3: Decodificando parámetros del reporte ===");
+    console.log("\n🔍 === PASO 4: Decodificando parámetros del reporte ===");
 
     const parametrosDecodificados =
       decodificarCombinacionParametrosParaReporteEscolar(
@@ -71,10 +107,20 @@ async function main() {
       console.error(
         "❌ Error: No se pudieron decodificar los parámetros del reporte"
       );
+
+      // Actualizar estado a ERROR en PostgreSQL
       await actualizarEstadoReporteAsistenciaEscolar(
         payload.Combinacion_Parametros_Reporte,
         EstadoReporteAsistenciaEscolar.ERROR
       );
+
+      // Actualizar Redis con estado ERROR
+      const reporteError: T_Reportes_Asistencia_Escolar = {
+        ...payload,
+        Estado_Reporte: EstadoReporteAsistenciaEscolar.ERROR,
+      };
+      await actualizarReporteAsistenciaEscolarEnRedis(reporteError);
+
       process.exit(1);
     }
 
@@ -84,10 +130,10 @@ async function main() {
       parametrosDecodificados;
 
     // ============================================================
-    // PASO 4: Obtener configuraciones de tolerancia
+    // PASO 5: Obtener configuraciones de tolerancia
     // ============================================================
     console.log(
-      "\n⚙️ === PASO 4: Obteniendo configuraciones de tolerancia ==="
+      "\n⚙️ === PASO 5: Obteniendo configuraciones de tolerancia ==="
     );
 
     const tolerancias = await obtenerConfiguracionesToleranciasTardanza();
@@ -103,10 +149,10 @@ async function main() {
     );
 
     // ============================================================
-    // PASO 5: Obtener datos de estudiantes y aulas desde Google Drive
+    // PASO 6: Obtener datos de estudiantes y aulas desde Google Drive
     // ============================================================
     console.log(
-      "\n📂 === PASO 5: Obteniendo datos de estudiantes y aulas desde Google Drive ==="
+      "\n📂 === PASO 6: Obteniendo datos de estudiantes y aulas desde Google Drive ==="
     );
 
     const { estudiantes: estudiantesMap, aulas: aulasMap } =
@@ -120,7 +166,6 @@ async function main() {
 
     // Filtrar aulas según los parámetros del reporte
     const aulasFiltradas = Array.from(aulasMap.values()).filter((aula) => {
-      // Filtrar por grado
       if (
         aulasSeleccionadas.Grado !== "T" &&
         aula.Grado !== aulasSeleccionadas.Grado
@@ -128,7 +173,6 @@ async function main() {
         return false;
       }
 
-      // Filtrar por sección
       if (
         aulasSeleccionadas.Seccion !== "T" &&
         aula.Seccion !== aulasSeleccionadas.Seccion
@@ -142,11 +186,10 @@ async function main() {
     console.log(`✅ ${aulasFiltradas.length} aulas coinciden con los filtros`);
 
     // ============================================================
-    // PASO 6: Obtener asistencias desde MongoDB
+    // PASO 7: Obtener asistencias desde MongoDB
     // ============================================================
-    console.log("\n💾 === PASO 6: Obteniendo asistencias desde MongoDB ===");
+    console.log("\n💾 === PASO 7: Obteniendo asistencias desde MongoDB ===");
 
-    // Determinar qué grados consultar
     const gradosAConsultar =
       aulasSeleccionadas.Grado === "T"
         ? aulasSeleccionadas.Nivel === NivelEducativo.PRIMARIA
@@ -154,7 +197,6 @@ async function main() {
           : [1, 2, 3, 4, 5]
         : [aulasSeleccionadas.Grado];
 
-    // Determinar qué meses consultar
     const mesesAConsultar: number[] = [];
     for (let mes = rangoTiempo.DesdeMes; mes <= rangoTiempo.HastaMes; mes++) {
       mesesAConsultar.push(mes);
@@ -163,7 +205,6 @@ async function main() {
     console.log(`📊 Consultando grados: ${gradosAConsultar.join(", ")}`);
     console.log(`📊 Consultando meses: ${mesesAConsultar.join(", ")}`);
 
-    // Obtener todas las asistencias necesarias
     const todasLasAsistencias = [];
     for (const grado of gradosAConsultar) {
       const asistencias = await obtenerAsistenciasEstudiantesPorRango(
@@ -179,10 +220,10 @@ async function main() {
     );
 
     // ============================================================
-    // PASO 7: Procesar asistencias y generar reporte
+    // PASO 8: Procesar asistencias y generar reporte
     // ============================================================
     console.log(
-      "\n📊 === PASO 7: Procesando asistencias y generando reporte ==="
+      "\n📊 === PASO 8: Procesando asistencias y generando reporte ==="
     );
 
     let reporteGenerado:
@@ -196,7 +237,7 @@ async function main() {
         estudiantesMap,
         rangoTiempo,
         toleranciaSegundos,
-        aulasSeleccionadas.Nivel // ✅ Pasar el nivel educativo
+        aulasSeleccionadas.Nivel
       );
     } else {
       reporteGenerado = generarReportePorMeses(
@@ -207,15 +248,16 @@ async function main() {
         toleranciaSegundos
       );
     }
+
     console.log("✅ Reporte generado exitosamente");
     console.log(
       `   - ${Object.keys(reporteGenerado).length} aulas en el reporte`
     );
 
     // ============================================================
-    // PASO 8: Subir reporte a Google Drive
+    // PASO 9: Subir reporte a Google Drive
     // ============================================================
-    console.log("\n☁️ === PASO 8: Subiendo reporte a Google Drive ===");
+    console.log("\n☁️ === PASO 9: Subiendo reporte a Google Drive ===");
 
     const nombreArchivo = `Reporte_${
       payload.Combinacion_Parametros_Reporte
@@ -231,10 +273,10 @@ async function main() {
     console.log(`   - Nombre: ${nombreArchivo}`);
 
     // ============================================================
-    // PASO 9: Actualizar estado del reporte a DISPONIBLE
+    // PASO 10: Actualizar estado en PostgreSQL a DISPONIBLE
     // ============================================================
     console.log(
-      "\n✅ === PASO 9: Actualizando estado del reporte a DISPONIBLE ==="
+      "\n✅ === PASO 10: Actualizando estado en PostgreSQL a DISPONIBLE ==="
     );
 
     await actualizarEstadoReporteAsistenciaEscolar(
@@ -243,19 +285,44 @@ async function main() {
       resultadoSubida.id
     );
 
+    // ============================================================
+    // PASO 11: Actualizar Redis con el reporte completo
+    // ============================================================
+    console.log(
+      "\n💾 === PASO 11: Actualizando Redis con reporte completo ==="
+    );
+
+    const reporteCompleto: T_Reportes_Asistencia_Escolar = {
+      ...payload,
+      Estado_Reporte: EstadoReporteAsistenciaEscolar.DISPONIBLE,
+      Datos_Google_Drive_Id: resultadoSubida.id,
+    };
+
+    await actualizarReporteAsistenciaEscolarEnRedis(reporteCompleto);
+
     console.log("\n🎉 Proceso completado exitosamente");
   } catch (error) {
     console.error("❌ Error en el procesamiento:", error);
 
-    // Intentar actualizar el estado a ERROR si es posible
+    // Intentar actualizar el estado a ERROR tanto en PostgreSQL como en Redis
     try {
-      const args = process.argv.slice(2);
-      if (args.length > 0) {
-        const payload = JSON.parse(args[0]);
+      if (payloadOriginal) {
+        console.log("\n⚠️ Actualizando estado a ERROR...");
+
+        // Actualizar PostgreSQL
         await actualizarEstadoReporteAsistenciaEscolar(
-          payload.Combinacion_Parametros_Reporte,
+          payloadOriginal.Combinacion_Parametros_Reporte,
           EstadoReporteAsistenciaEscolar.ERROR
         );
+
+        // Actualizar Redis
+        const reporteError: T_Reportes_Asistencia_Escolar = {
+          ...payloadOriginal,
+          Estado_Reporte: EstadoReporteAsistenciaEscolar.ERROR,
+        };
+        await actualizarReporteAsistenciaEscolarEnRedis(reporteError);
+
+        console.log("✅ Estado actualizado a ERROR en PostgreSQL y Redis");
       }
     } catch (updateError) {
       console.error("❌ No se pudo actualizar el estado a ERROR:", updateError);
@@ -314,7 +381,7 @@ function generarReportePorDias(
     for (let mes = rangoTiempo.DesdeMes; mes <= rangoTiempo.HastaMes; mes++) {
       reporte[aula.Id_Aula].ConteoEstadosAsistencia[mes] = {};
 
-      // Obtener días disponibles del mes usando la función proporcionada
+      // Obtener días disponibles del mes
       const diasDisponibles = getDiasDisponiblesPorMes(
         mes,
         diaActual,
@@ -374,24 +441,21 @@ function generarReportePorDias(
 
       // Verificar que el día esté inicializado en el reporte
       if (!reporte[idAula].ConteoEstadosAsistencia[mes][dia]) {
-        continue; // Este día no está en el rango válido
+        continue;
       }
 
       // Determinar el estado de asistencia
       const entrada = (asistenciaDia as any)[ModoRegistro.Entrada];
 
       if (!entrada || entrada.DesfaseSegundos === null) {
-        // Falta
         reporte[idAula].ConteoEstadosAsistencia[mes][dia][
           EstadosAsistenciaEscolar.Falta
         ]++;
       } else if (entrada.DesfaseSegundos > toleranciaSegundos) {
-        // Tardanza (superó la tolerancia)
         reporte[idAula].ConteoEstadosAsistencia[mes][dia][
           EstadosAsistenciaEscolar.Tarde
         ]++;
       } else {
-        // Temprano o puntual (dentro de la tolerancia)
         reporte[idAula].ConteoEstadosAsistencia[mes][dia][
           EstadosAsistenciaEscolar.Temprano
         ]++;
@@ -457,11 +521,14 @@ function generarReportePorMeses(
       const dia = parseInt(diaStr, 10);
 
       // Validar rango de días si aplica
-      if (rangoTiempo.DesdeDia !== null && rangoTiempo.HastaDia !== null) {
-        if (mes === rangoTiempo.DesdeMes && dia < rangoTiempo.DesdeDia) {
+      if (rangoTiempo.DesdeDia !== null && mes === rangoTiempo.DesdeMes) {
+        if (dia < rangoTiempo.DesdeDia) {
           continue;
         }
-        if (mes === rangoTiempo.HastaMes && dia > rangoTiempo.HastaDia) {
+      }
+
+      if (rangoTiempo.HastaDia !== null && mes === rangoTiempo.HastaMes) {
+        if (dia > rangoTiempo.HastaDia) {
           continue;
         }
       }
@@ -470,17 +537,14 @@ function generarReportePorMeses(
       const entrada = (asistenciaDia as any)[ModoRegistro.Entrada];
 
       if (!entrada || entrada.DesfaseSegundos === null) {
-        // Falta
         reporte[idAula].ConteoEstadosAsistencia[mes][
           EstadosAsistenciaEscolar.Falta
         ]++;
       } else if (entrada.DesfaseSegundos > toleranciaSegundos) {
-        // Tardanza (superó la tolerancia)
         reporte[idAula].ConteoEstadosAsistencia[mes][
           EstadosAsistenciaEscolar.Tarde
         ]++;
       } else {
-        // Temprano o puntual (dentro de la tolerancia)
         reporte[idAula].ConteoEstadosAsistencia[mes][
           EstadosAsistenciaEscolar.Temprano
         ]++;
