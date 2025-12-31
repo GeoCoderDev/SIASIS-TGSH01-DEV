@@ -6,6 +6,6 @@ export default defineConfig({
     path: "prisma/migrations",
   },
   datasource: {
-    url: env("RDP02_INS1_DATABASE_URL"),
+    // url: env("RDP02_INS1_DATABASE_URL"),
   },
 });
