@@ -1,4 +1,3 @@
-# .github/workflows/generar-reporte-asistencia-escolar.yml
 name: Generar Reporte de Asistencia Escolar
 
 on:

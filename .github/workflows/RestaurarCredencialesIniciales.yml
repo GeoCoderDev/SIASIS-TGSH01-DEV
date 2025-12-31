@@ -1,0 +1,190 @@
+name: Rollback de Contraseñas a Estado Inicial
+
+on:
+  # Ejecución manual desde GitHub
+  workflow_dispatch:
+    inputs:
+      payload:
+        description: "Payload con secreto y usuarios en formato JSON"
+        required: true
+        type: string
+        default: '{"Testing_Key_For_Rollbacks":"mi-secreto","usuarios":[{"Rol":"PP","Nombre_Usuario":"juan.perez"}]}'
+
+  # Ejecución desde solicitud HTTP externa
+  repository_dispatch:
+    types: [rollback-contrasenas]
+
+jobs:
+  rollback-contrasenas:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Instalar dependencias
+        run: npm install
+
+      - name: Validar y preparar payload
+        id: validar-payload
+        run: |
+          # Determinar origen del payload
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "Ejecución manual detectada"
+            PAYLOAD='${{ github.event.inputs.payload }}'
+          elif [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            echo "Ejecución por HTTP detectada"
+            PAYLOAD=$(cat <<'EOF'
+          ${{ toJson(github.event.client_payload) }}
+          EOF
+          )
+            PAYLOAD=$(echo "$PAYLOAD" | jq -c .)
+          else
+            echo "❌ Tipo de evento no soportado: ${{ github.event_name }}"
+            exit 1
+          fi
+
+          # Validar que el payload sea JSON válido
+          echo "$PAYLOAD" | jq . > /dev/null 2>&1
+          if [ $? -ne 0 ]; then
+            echo "❌ Error: El payload no es un JSON válido"
+            echo "Payload recibido: $PAYLOAD"
+            exit 1
+          fi
+
+          # Validar campos requeridos
+          TESTING_KEY=$(echo "$PAYLOAD" | jq -r '.Testing_Key_For_Rollbacks')
+          USUARIOS=$(echo "$PAYLOAD" | jq -r '.usuarios')
+
+          if [ "$TESTING_KEY" = "null" ] || [ -z "$TESTING_KEY" ]; then
+            echo "❌ Error: Falta campo Testing_Key_For_Rollbacks"
+            exit 1
+          fi
+
+          if [ "$USUARIOS" = "null" ] || [ -z "$USUARIOS" ]; then
+            echo "❌ Error: Falta campo usuarios"
+            exit 1
+          fi
+
+          # Validar que usuarios sea un array
+          USUARIOS_TIPO=$(echo "$PAYLOAD" | jq -r 'if .usuarios | type == "array" then "ok" else "error" end')
+          if [ "$USUARIOS_TIPO" != "ok" ]; then
+            echo "❌ Error: El campo usuarios debe ser un array"
+            exit 1
+          fi
+
+          # Validar que el array no esté vacío
+          USUARIOS_COUNT=$(echo "$PAYLOAD" | jq -r '.usuarios | length')
+          if [ "$USUARIOS_COUNT" -eq 0 ]; then
+            echo "❌ Error: El array de usuarios está vacío"
+            exit 1
+          fi
+
+          # Validar estructura de cada usuario
+          VALIDATION_ERROR=$(echo "$PAYLOAD" | jq -r '
+            .usuarios[] | 
+            select(.Rol == null or .Nombre_Usuario == null) | 
+            "Usuario inválido: falta Rol o Nombre_Usuario"
+          ')
+          
+          if [ -n "$VALIDATION_ERROR" ]; then
+            echo "❌ Error: $VALIDATION_ERROR"
+            exit 1
+          fi
+
+          # Validar roles válidos
+          ROLES_VALIDOS='["D", "PP", "A", "PS", "T", "R", "PA"]'
+          INVALID_ROLES=$(echo "$PAYLOAD" | jq -r --argjson valid_roles "$ROLES_VALIDOS" '
+            .usuarios[] | 
+            select([.Rol] | inside($valid_roles) | not) | 
+            .Rol
+          ')
+          
+          if [ -n "$INVALID_ROLES" ]; then
+            echo "❌ Error: Rol(es) inválido(s) encontrado(s): $INVALID_ROLES"
+            echo "Roles válidos: D, PP, A, PS, T, R, PA"
+            exit 1
+          fi
+
+          echo "✅ Payload validado correctamente"
+          echo "✅ Cantidad de usuarios a procesar: $USUARIOS_COUNT"
+          
+          echo "payload<<EOF" >> $GITHUB_OUTPUT
+          echo "$PAYLOAD" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Mostrar información de ejecución
+        run: |
+          echo "🚀 === INFORMACIÓN DE EJECUCIÓN ==="
+          echo "Evento: ${{ github.event_name }}"
+          
+          PAYLOAD='${{ steps.validar-payload.outputs.payload }}'
+          USUARIOS_COUNT=$(echo "$PAYLOAD" | jq -r '.usuarios | length')
+          
+          echo "Usuarios a procesar: $USUARIOS_COUNT"
+          echo "Actor: ${{ github.actor }}"
+          echo "Repositorio: ${{ github.repository }}"
+          echo "SHA: ${{ github.sha }}"
+          echo "Fecha: $(date)"
+          echo "================================"
+
+      - name: Ejecutar script de rollback de contraseñas
+        run: |
+          echo "🔄 Ejecutando script de rollback de contraseñas..."
+          
+          PAYLOAD='${{ steps.validar-payload.outputs.payload }}'
+          
+          echo "Payload a procesar (sin mostrar secreto por seguridad)"
+          
+          # Ejecutar script
+          npx ts-node ./src/jobs/rollback/RestaurarCredencialInicialParaUsuario.ts "$PAYLOAD"
+        env:
+          # PostgreSQL (RDP02)
+          RDP02_INS1_DATABASE_URL: ${{ secrets.RDP02_INS1_DATABASE_URL }}
+          RDP02_INS2_DATABASE_URL: ${{ secrets.RDP02_INS2_DATABASE_URL }}
+          RDP02_INS3_DATABASE_URL: ${{ secrets.RDP02_INS3_DATABASE_URL }}
+          
+          # MongoDB (RDP03)
+          RDP03_INS1_DATABASE_URL: ${{ secrets.RDP03_INS1_DATABASE_URL }}
+          RDP03_INS2_DATABASE_URL: ${{ secrets.RDP03_INS2_DATABASE_URL }}
+          RDP03_INS3_DATABASE_URL: ${{ secrets.RDP03_INS3_DATABASE_URL }}
+          RDP03_INS4_DATABASE_URL: ${{ secrets.RDP03_INS4_DATABASE_URL }}
+          RDP03_INS5_DATABASE_URL: ${{ secrets.RDP03_INS5_DATABASE_URL }}
+
+          # Claves de encriptación
+          ENCRYPTION_KEY_DIRECTIVO: ${{ secrets.ENCRYPTION_KEY_DIRECTIVO }}
+          ENCRYPTION_KEY_PROFESOR_PRIMARIA: ${{ secrets.ENCRYPTION_KEY_PROFESOR_PRIMARIA }}
+          ENCRYPTION_KEY_AUXILIAR: ${{ secrets.ENCRYPTION_KEY_AUXILIAR }}
+          ENCRYPTION_KEY_PROFESOR_TUTOR_SECUNDARIA: ${{ secrets.ENCRYPTION_KEY_PROFESOR_TUTOR_SECUNDARIA }}
+          ENCRYPTION_KEY_RESPONSABLE: ${{ secrets.ENCRYPTION_KEY_RESPONSABLE }}
+          ENCRYPTION_KEY_PERSONAL_ADMINISTRATIVO: ${{ secrets.ENCRYPTION_KEY_PERSONAL_ADMINISTRATIVO }}
+
+          # Secreto para validar rollback
+          TESTING_SECRET_KEY_FOR_ROLLBACKS: ${{ secrets.TESTING_SECRET_KEY_FOR_ROLLBACKS }}
+
+          # Entorno
+          ENTORNO: ${{ secrets.ENTORNO }}
+
+      - name: Reporte de resultado
+        if: always()
+        run: |
+          if [ $? -eq 0 ]; then
+            echo "✅ === EJECUCIÓN EXITOSA ==="
+            echo "Rollback de contraseñas completado correctamente"
+            
+            PAYLOAD='${{ steps.validar-payload.outputs.payload }}'
+            USUARIOS_COUNT=$(echo "$PAYLOAD" | jq -r '.usuarios | length')
+            
+            echo "Usuarios procesados: $USUARIOS_COUNT"
+          else
+            echo "❌ === EJECUCIÓN FALLIDA ==="
+            echo "Error al ejecutar rollback de contraseñas"
+            echo "Revisar logs anteriores para más detalles"
+            exit 1
+          fi

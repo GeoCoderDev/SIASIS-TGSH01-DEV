@@ -1,4 +1,3 @@
-// src/jobs/reportes/GenerarReporteAsistenciaEscolar.ts
 import { closeClient } from "../../core/databases/connectors/mongodb";
 import { closePool } from "../../core/databases/connectors/postgres";
 
