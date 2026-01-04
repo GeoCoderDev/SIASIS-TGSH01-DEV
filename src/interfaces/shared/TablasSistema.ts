@@ -48,7 +48,7 @@ export enum TablasRemoto {
 
   // Configuración y sistema
   Tabla_Fechas_Importantes = "T_Fechas_Importantes",
-  Tabla_Horarios_Asistencia = "T_Horarios_Asistencia",
+  Tabla_Horarios_Asistencia = "T_Horarios_Generales",
   Tabla_Ajustes_Sistema = "T_Ajustes_Generales_Sistema",
   Tabla_Bloqueo_Roles = "T_Bloqueo_Roles",
   Tabla_Registro_Fallos = "T_Registro_Fallos_Sistema",

@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 import { Redis } from "@upstash/redis";
 import { TipoAsistencia } from "../../interfaces/shared/AsistenciaRequests";
 
